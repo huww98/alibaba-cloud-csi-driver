@@ -27,71 +27,6 @@ var (
 )
 
 var (
-	// 4 - reads completed successfully
-	diskReadsCompletedDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(nodeNamespace, volumeSubSystem, "read_completed_total"),
-		"The total number of reads completed successfully.",
-		diskStatLabelNames, nil,
-	)
-	// 5 - reads merged
-	diskReadsMergeDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(nodeNamespace, volumeSubSystem, "read_merged_total"),
-		"The total number of reads merged.",
-		diskStatLabelNames,
-		nil,
-	)
-	// 6 - sectors read
-	diskReadBytesDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(nodeNamespace, volumeSubSystem, "read_bytes_total"),
-		"The total number of bytes read successfully.",
-		diskStatLabelNames, nil,
-	)
-	// 7 - time spent reading (ms)
-	diskReadTimeMilliSecondsDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(nodeNamespace, volumeSubSystem, "read_time_milliseconds_total"),
-		"The total number of seconds spent by all reads.",
-		diskStatLabelNames,
-		nil,
-	)
-	// 8 - writes completed
-	diskWritesCompletedDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(nodeNamespace, volumeSubSystem, "write_completed_total"),
-		"The total number of writes completed successfully.",
-		diskStatLabelNames, nil,
-	)
-	//9 - writes merged
-	diskWriteMergeDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(nodeNamespace, volumeSubSystem, "write_merged_total"),
-		"The number of writes merged.",
-		diskStatLabelNames,
-		nil,
-	)
-	//10 - sectors written
-	diskWrittenBytesDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(nodeNamespace, volumeSubSystem, "write_bytes_total"),
-		"The total number of bytes written successfully.",
-		diskStatLabelNames, nil,
-	)
-	//11 - time spent writing (ms)
-	diskWriteTimeMilliSecondsDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(nodeNamespace, volumeSubSystem, "write_time_milliseconds_total"),
-		"This is the total number of seconds spent by all writes.",
-		diskStatLabelNames,
-		nil,
-	)
-	//12 - I/Os currently in progress
-	diskIONowDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(nodeNamespace, volumeSubSystem, "io_now"),
-		"The number of I/Os currently in progress.",
-		diskStatLabelNames,
-		nil,
-	)
-	//13 - time spent doing I/Os (ms)
-	diskIOTimeSecondsDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(nodeNamespace, volumeSubSystem, "io_time_seconds_total"),
-		"Total seconds spent doing I/Os.",
-		diskStatLabelNames, nil,
-	)
 	//13 - capacity available
 	diskCapacityAvailableDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(nodeNamespace, volumeSubSystem, "capacity_bytes_available"),
@@ -138,6 +73,17 @@ var (
 		nil,
 	)
 )
+
+func volDesc(name string, valueType prometheus.ValueType, factor float64, help string) typedFactorDesc {
+	return typedFactorDesc{
+		desc: prometheus.NewDesc(
+			prometheus.BuildFQName(nodeNamespace, volumeSubSystem, name),
+			help, diskStatLabelNames, nil,
+		),
+		valueType: valueType,
+		factor:    factor,
+	}
+}
 
 type diskInfo struct {
 	PvcNamespace    string
@@ -201,25 +147,35 @@ func NewDiskStatCollector() (Collector, error) {
 	return &diskStatCollector{
 		descs: []typedFactorDesc{
 			//4 - reads completed successfully
-			{desc: diskReadsCompletedDesc, valueType: prometheus.CounterValue},
+			volDesc("read_completed_total", prometheus.CounterValue, 1.,
+				"The total number of reads completed successfully."),
 			//5 - reads merged
-			{desc: diskReadsMergeDesc, valueType: prometheus.CounterValue},
+			volDesc("read_merged_total", prometheus.CounterValue, 1.,
+				"The total number of reads merged."),
 			//6 - sectors read
-			{desc: diskReadBytesDesc, valueType: prometheus.CounterValue, factor: diskSectorSize},
+			volDesc("read_bytes_total", prometheus.CounterValue, diskSectorSize,
+				"The total number of bytes read successfully."),
 			//7 - time spent reading (ms)
-			{desc: diskReadTimeMilliSecondsDesc, valueType: prometheus.CounterValue, factor: .001},
+			volDesc("read_time_milliseconds_total", prometheus.CounterValue, .001,
+				"The total number of seconds spent by all reads."),
 			//8 - writes completed
-			{desc: diskWritesCompletedDesc, valueType: prometheus.CounterValue},
+			volDesc("write_completed_total", prometheus.CounterValue, 1.,
+				"The total number of writes completed successfully."),
 			//9 - writes merged
-			{desc: diskWriteMergeDesc, valueType: prometheus.CounterValue},
+			volDesc("write_merged_total", prometheus.CounterValue, 1.,
+				"The number of writes merged."),
 			//10 - sectors written
-			{desc: diskWrittenBytesDesc, valueType: prometheus.CounterValue, factor: diskSectorSize},
+			volDesc("write_bytes_total", prometheus.CounterValue, diskSectorSize,
+				"The total number of bytes written successfully."),
 			//11 - time spent writing (ms)
-			{desc: diskWriteTimeMilliSecondsDesc, valueType: prometheus.CounterValue, factor: .001},
+			volDesc("write_time_milliseconds_total", prometheus.CounterValue, .001,
+				"This is the total number of seconds spent by all writes."),
 			//12 - I/Os currently in progress
-			{desc: diskIONowDesc, valueType: prometheus.GaugeValue},
+			volDesc("io_now", prometheus.GaugeValue, 1.,
+				"The number of I/Os currently in progress."),
 			//13 - time spent doing I/Os (ms)
-			{desc: diskIOTimeSecondsDesc, valueType: prometheus.CounterValue, factor: .001},
+			volDesc("io_time_seconds_total", prometheus.CounterValue, .001,
+				"Total seconds spent doing I/Os."),
 			//14 - capacity available
 			{desc: diskCapacityAvailableDesc, valueType: prometheus.CounterValue},
 			//15 - capacity total
