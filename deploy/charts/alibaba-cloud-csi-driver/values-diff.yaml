@@ -1,0 +1,23 @@
+images:
+  registry: registry-cn-hangzhou.ack.aliyuncs.com
+  controller:
+    repo: test-public/csi-plugin
+    tag: "v1.6.1-49-g37bf9a28"
+  plugin:
+    repo: test-public/csi-plugin
+    tag: "v1.6.1-49-g37bf9a28"
+  pluginInit:
+    repo: test-public/csi-plugin
+    tag: "v1.6.1-49-g37bf9a28-init"
+  externalSnapshotter:
+    repo: test-public/csi-snapshotter
+    tag: v8.1.1-aliyun
+  externalSnapshotController:
+    repo: test-public/snapshot-controller
+    tag: "v8.1.1-aliyun"
+deploy:
+  clusterID: c815bf7db10604f0ab4c8ef201d481b29
+logging:
+  sls:
+    enabled: true
+  format: json
