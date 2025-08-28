@@ -859,8 +859,7 @@ func (ns *nodeServer) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoReque
 			Segments: map[string]string{
 				common.ECSInstanceIDTopologyKey: metadata.MustGet(ns.metadata, metadata.InstanceID),
 				TopologyZoneKey:                 metadata.MustGet(ns.metadata, metadata.ZoneID),
-				common.TopologyKeyZone:          metadata.MustGet(ns.metadata, metadata.ZoneID),
-				common.TopologyKeyRegion:        metadata.MustGet(ns.metadata, metadata.RegionID),
+				TopologyRegionKey:               metadata.MustGet(ns.metadata, metadata.RegionID),
 			},
 		},
 	}, nil
