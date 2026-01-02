@@ -81,3 +81,30 @@ func TestEcsEndpoint(t *testing.T) {
 		testEp(t, "cn-hangzhou-finance", "ecs.aliyuncs.com")
 	})
 }
+
+func TestEfloControllerConfig(t *testing.T) {
+	cases := []struct {
+		network  string
+		endpoint string
+	}{
+		{
+			network:  "",
+			endpoint: "eflo-controller.cn-hangzhou.aliyuncs.com",
+		},
+		{
+			network:  "public",
+			endpoint: "eflo-controller.cn-hangzhou.aliyuncs.com",
+		},
+		{
+			network:  "vpc",
+			endpoint: "eflo-controller-vpc.cn-hangzhou.aliyuncs.com",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.network, func(t *testing.T) {
+			t.Setenv("ALIBABA_CLOUD_NETWORK_TYPE", c.network)
+			cfg := GetEfloControllerConfig("cn-hangzhou")
+			assert.Equal(t, c.endpoint, *cfg.Endpoint)
+		})
+	}
+}
