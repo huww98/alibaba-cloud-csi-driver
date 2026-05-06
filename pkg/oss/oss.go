@@ -35,22 +35,11 @@ import (
 )
 
 const (
-	driverType = "oss"
 	driverName = "ossplugin.csi.alibabacloud.com"
 )
 
-// OSS the OSS object
-type OSS struct {
-	endpoint string
-	servers  common.Servers
-}
-
-// NewDriver init oss type of csi driver
-func NewDriver(endpoint string, m metadata.MetadataProvider, serviceType utils.ServiceType, csiCfg utils.Config) *OSS {
+func NewDriver(endpoint string, m metadata.MetadataProvider, serviceType utils.ServiceType, csiCfg utils.Config) *common.Servers {
 	klog.Infof("Driver: %v version: %v", driverName, version.VERSION)
-
-	d := &OSS{}
-	d.endpoint = endpoint
 
 	nodeName := os.Getenv("KUBE_NODE_NAME")
 	if serviceType&utils.Node > 0 {
@@ -101,9 +90,8 @@ func NewDriver(endpoint string, m metadata.MetadataProvider, serviceType utils.S
 			},
 		}
 	}
-	d.servers = servers
 
-	return d
+	return &servers
 }
 
 type identityServer struct {
@@ -116,9 +104,4 @@ func newIdentityServer() *identityServer {
 			Name: driverName,
 		},
 	}
-}
-
-// Run start a newNodeServer
-func (d *OSS) Run() {
-	common.RunCSIServer(driverType, d.endpoint, d.servers)
 }

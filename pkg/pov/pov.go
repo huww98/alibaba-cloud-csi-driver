@@ -10,21 +10,13 @@ import (
 )
 
 const (
-	driverType = "pov"
 	DriverName = "povplugin.csi.alibabacloud.com"
 )
 
 var GlobalConfigVar GlobalConfig
 
 // Pangu Over Virtio
-type PoV struct {
-	endpoint string
-	servers  common.Servers
-}
-
-func NewDriver(meta *metadata.Metadata, endpoint string, serviceType utils.ServiceType) *PoV {
-	poV := &PoV{}
-	poV.endpoint = endpoint
+func NewDriver(meta *metadata.Metadata, endpoint string, serviceType utils.ServiceType) *common.Servers {
 	newGlobalConfig(meta, serviceType)
 
 	var servers common.Servers
@@ -37,15 +29,8 @@ func NewDriver(meta *metadata.Metadata, endpoint string, serviceType utils.Servi
 		ns := newNodeService(meta)
 		servers.NodeServer = &ns
 	}
-	poV.servers = servers
 
-	return poV
-}
-
-// Run start pov driver service
-func (p *PoV) Run() {
-	klog.Infof("Starting pov driver service, endpoint: %s", p.endpoint)
-	common.RunCSIServer(driverType, p.endpoint, p.servers)
+	return &servers
 }
 
 func newGlobalConfig(meta *metadata.Metadata, serviceType utils.ServiceType) {
