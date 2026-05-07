@@ -620,7 +620,7 @@ spec:
             requests:
               cpu: 100m
               memory: 128Mi
-{{- if and .Values.csi.disk.enabled .Values.csi.disk.controller.enabled .Values.csi.disk.controller.labeler.enabled }}
+{{- if and .Values.csi.disk.enabled .Values.csi.disk.controller.enabled .Values.deploy.labeler.enabled }}
         - name: csi-metadata-labeler
           image: {{ include "imageSpec" (list .Values "controller") }}
           args:
