@@ -37,6 +37,14 @@ func getRegionalEndpoint(product, network, regionID string) *string {
 
 func getOpenAPIConfig(regionID string) *openapi.Config {
 	config := &openapi.Config{RegionId: &regionID}
+	// Unlike the v1 SDK, the v2 SDK does not send RegionId automatically; its
+	// config.RegionId is only used for endpoint resolution. All our clients were
+	// migrated from the v1 SDK, which filled RegionId on every request, so
+	// restore that by injecting it as a global query parameter (e.g. ECS
+	// TagResources requires it). A per-request RegionId still overrides this.
+	config.GlobalParameters = &openapi.GlobalParameters{
+		Queries: map[string]*string{"RegionId": &regionID},
+	}
 	if e := os.Getenv("ALICLOUD_CLIENT_SCHEME"); e != "" {
 		config.Protocol = &e
 	}
