@@ -158,7 +158,10 @@ func mapAttachError(err error, nodeID, diskID string) error {
 		case InstanceNotFound:
 			return status.Errorf(codes.NotFound, "Node(%s) not found, request ID: %s", nodeID, aliErr.RequestId())
 		case DiskLimitExceeded:
-			return status.Errorf(codes.Internal, "%v, Node(%s) exceed the limit attachments of disk", err, nodeID)
+			// The node has no free disk slot. ResourceExhausted is what the CO
+			// expects here: it refreshes the node volume limit and fails the pod
+			// instead of retrying the attach forever (KEP-4876, KEP-6011).
+			return status.Errorf(codes.ResourceExhausted, "%v, Node(%s) exceed the limit attachments of disk", err, nodeID)
 		case DiskNotPortable:
 			return status.Errorf(codes.Internal, "%v, Disk(%s) should be pay-as-you-go, not be subscription, please check and modify the charge type, and refer to: https://help.aliyun.com/document_detail/134767.html", err, diskID)
 		case NotSupportDiskCategory:

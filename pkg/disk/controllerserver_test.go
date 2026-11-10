@@ -24,6 +24,9 @@ import (
 	"testing"
 
 	ecs "github.com/aliyun/alibaba-cloud-sdk-go/services/ecs"
+	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/golang/mock/gomock"
+	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/cloud"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -157,4 +160,35 @@ func TestUpdatePVDiskType(t *testing.T) {
 
 		require.NoError(t, cs.updatePVDiskType(ctx, "d-x", pvName, ModifyParameters{Category: "cloud_auto"}))
 	})
+}
+
+func TestControllerGetCapabilities(t *testing.T) {
+	cs := &controllerServer{}
+	resp, err := cs.ControllerGetCapabilities(t.Context(), &csi.ControllerGetCapabilitiesRequest{})
+	require.NoError(t, err)
+
+	types := map[csi.ControllerServiceCapability_RPC_Type]bool{}
+	for _, capability := range resp.Capabilities {
+		types[capability.GetRpc().GetType()] = true
+	}
+	// The controller-side node info flow requires both capabilities.
+	assert.True(t, types[csi.ControllerServiceCapability_RPC_GET_NODE_INFO], "GET_NODE_INFO should be advertised")
+	assert.True(t, types[csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME], "PUBLISH_UNPUBLISH_VOLUME should be advertised")
+}
+
+func TestControllerGetNodeInfo(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	ecs := cloud.NewMockECSv2Interface(ctrl)
+	ecs.EXPECT().DescribeInstancesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(describeInstances(testInstanceID, testZone, testInstanceType, false), nil)
+	ecs.EXPECT().DescribeInstanceTypesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(describeInstanceTypes(testInstanceType, 17, 0), nil)
+	ecs.EXPECT().DescribeDisksWithContext(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(describeDisks("d-system"), nil)
+
+	cs := &controllerServer{nodeInfo: newNodeInfoResolver(ecs, nil, testRegion)}
+	resp, err := cs.ControllerGetNodeInfo(t.Context(), &csi.ControllerGetNodeInfoRequest{NodeId: testInstanceID})
+	require.NoError(t, err)
+	assert.EqualValues(t, 17, resp.MaxVolumesPerNode)
+	assert.Len(t, resp.PublishedVolumes, 1)
 }

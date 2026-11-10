@@ -101,6 +101,11 @@ spec:
             - "--driver={{ include "substrate.drivers" (dict "base" (include "enabledPlugins" $nodePool.csi) "enabled" $nodePool.enableSubstrate) }}"
             - --run-controller-service=false
             - --run-node-service=true
+{{- if $nodePool.csi.disk.controller.nodeInfoFromController }}
+            # Report only the node ID from NodeGetInfo; the controller reports
+            # topology and the volume limit through ControllerGetNodeInfo.
+            - --node-info-from-controller=true
+{{- end }}
 {{- if $nodePool.enableSubstrate }}
             {{- include "substrate.apiArgs" $ | nindent 12 }}
             - --substrate-root={{ clean $.Values.substrate.root }}

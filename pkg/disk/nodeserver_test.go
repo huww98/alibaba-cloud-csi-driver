@@ -11,10 +11,13 @@ import (
 	"testing"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/common"
 	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"k8s.io/klog/v2/ktesting"
 	k8smount "k8s.io/mount-utils"
 )
@@ -328,9 +331,10 @@ func TestCollectMountOptions(t *testing.T) {
 
 func TestNodeGetCapabilities(t *testing.T) {
 	tests := []struct {
-		name          string
-		metricEnable  bool
-		expectedCount int
+		name               string
+		metricEnable       bool
+		controllerNodeInfo bool
+		expectedCount      int
 	}{
 		{
 			name:          "metrics disabled",
@@ -342,6 +346,11 @@ func TestNodeGetCapabilities(t *testing.T) {
 			metricEnable:  true,
 			expectedCount: 3, // STAGE_UNSTAGE_VOLUME, EXPAND_VOLUME, and GET_VOLUME_STATS
 		},
+		{
+			name:               "controller node info enabled",
+			controllerNodeInfo: true,
+			expectedCount:      3, // STAGE_UNSTAGE_VOLUME, EXPAND_VOLUME, NODE_INFO_FROM_CONTROLLER
+		},
 	}
 
 	for _, tt := range tests {
@@ -352,7 +361,7 @@ func TestNodeGetCapabilities(t *testing.T) {
 
 			GlobalConfigVar.MetricEnable = tt.metricEnable
 
-			ns := &nodeServer{}
+			ns := &nodeServer{controllerNodeInfo: tt.controllerNodeInfo}
 
 			resp, err := ns.NodeGetCapabilities(t.Context(), &csi.NodeGetCapabilitiesRequest{})
 
@@ -364,6 +373,7 @@ func TestNodeGetCapabilities(t *testing.T) {
 			hasStageUnstage := false
 			hasExpand := false
 			hasGetStats := false
+			hasNodeInfoFromController := false
 			for _, cap := range resp.Capabilities {
 				if cap.GetRpc().GetType() == csi.NodeServiceCapability_RPC_STAGE_UNSTAGE_VOLUME {
 					hasStageUnstage = true
@@ -374,10 +384,14 @@ func TestNodeGetCapabilities(t *testing.T) {
 				if cap.GetRpc().GetType() == csi.NodeServiceCapability_RPC_GET_VOLUME_STATS {
 					hasGetStats = true
 				}
+				if cap.GetRpc().GetType() == csi.NodeServiceCapability_RPC_NODE_INFO_FROM_CONTROLLER {
+					hasNodeInfoFromController = true
+				}
 			}
 			assert.True(t, hasStageUnstage, "STAGE_UNSTAGE_VOLUME should always be present")
 			assert.True(t, hasExpand, "EXPAND_VOLUME should always be present")
 			assert.Equal(t, tt.metricEnable, hasGetStats, "GET_VOLUME_STATS should match metricEnable")
+			assert.Equal(t, tt.controllerNodeInfo, hasNodeInfoFromController, "NODE_INFO_FROM_CONTROLLER should match controllerNodeInfo")
 		})
 	}
 }
@@ -402,4 +416,28 @@ func TestNodeExpandVolumeBlockNoCache(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, &csi.NodeExpandVolumeResponse{}, resp)
+}
+
+func TestNodeGetInfoControllerNodeInfo(t *testing.T) {
+	t.Run("only the node id is reported", func(t *testing.T) {
+		// A nil metadata provider and ECS client fail the test if they are used:
+		// the node must not call any cloud API in this flow.
+		ns := &nodeServer{
+			controllerNodeInfo: true,
+			GenericNodeServer:  common.GenericNodeServer{NodeID: testInstanceID},
+		}
+		resp, err := ns.NodeGetInfo(t.Context(), &csi.NodeGetInfoRequest{ControllerGetNodeInfo: true})
+		require.NoError(t, err)
+		assert.Equal(t, testInstanceID, resp.NodeId)
+		assert.Zero(t, resp.MaxVolumesPerNode)
+		assert.Nil(t, resp.AccessibleTopology)
+	})
+
+	t.Run("disabled on the node", func(t *testing.T) {
+		ns := &nodeServer{GenericNodeServer: common.GenericNodeServer{NodeID: testInstanceID}}
+		_, err := ns.NodeGetInfo(t.Context(), &csi.NodeGetInfoRequest{ControllerGetNodeInfo: true})
+		require.Error(t, err)
+		assert.Equal(t, codes.InvalidArgument, status.Code(err))
+		assert.Contains(t, err.Error(), "controller-side flow is disabled")
+	})
 }

@@ -100,14 +100,15 @@ const (
 )
 
 var (
-	endpoint             = flag.String("endpoint", "unix://tmp/csi.sock", "CSI endpoint")
-	nodeID               = flag.String("nodeid", "", "node id")
-	runAsController      = flag.Bool("run-as-controller", false, "Only run as controller service (deprecated)")
-	runControllerService = flag.Bool("run-controller-service", true, "activate CSI controller service")
-	runNodeService       = flag.Bool("run-node-service", true, "activate CSI node service")
-	runLabeler           = flag.Bool("run-labeler", false, "Run the centralized node metadata labeler (patches max-disk annotation and disk type labels on nodes)")
-	useLabeler           = flag.Bool("use-labeler", false, "Use the label added by the labeler, and disable fetch from OpenAPI")
-	driver               = flag.String("driver", TypePluginDISK, "CSI Driver")
+	endpoint               = flag.String("endpoint", "unix://tmp/csi.sock", "CSI endpoint")
+	nodeID                 = flag.String("nodeid", "", "node id")
+	runAsController        = flag.Bool("run-as-controller", false, "Only run as controller service (deprecated)")
+	runControllerService   = flag.Bool("run-controller-service", true, "activate CSI controller service")
+	runNodeService         = flag.Bool("run-node-service", true, "activate CSI node service")
+	runLabeler             = flag.Bool("run-labeler", false, "Run the centralized node metadata labeler (patches max-disk annotation and disk type labels on nodes)")
+	useLabeler             = flag.Bool("use-labeler", false, "Use the label added by the labeler, and disable fetch from OpenAPI")
+	nodeInfoFromController = flag.Bool("node-info-from-controller", false, "Report the node topology and volume limit from the controller through ControllerGetNodeInfo (KEP-6011)")
+	driver                 = flag.String("driver", TypePluginDISK, "CSI Driver")
 	// Deprecated: rootDir is instead by KUBELET_ROOT_DIR env.
 	rootDir = flag.String("rootdir", "/var/lib/kubelet/csi-plugins", "Kubernetes root directory")
 
@@ -333,7 +334,7 @@ func main() {
 			case TypePluginOSS:
 				driver = oss.NewServers(endpoint, meta, serviceType, csiCfg, k8sVersion, *mountProxySock)
 			case TypePluginDISK:
-				driver = disk.NewServers(meta, ecsClient, endpoint, serviceType, csiCfg, *useLabeler)
+				driver = disk.NewServers(meta, ecsClient, efloClient, endpoint, serviceType, csiCfg, *useLabeler, *nodeInfoFromController)
 			case TypePluginCPFS:
 				klog.Fatalf("%s is no longer supported, please switch to %s if you are using CPFS 2.0 protocol server", TypePluginCPFS, TypePluginNAS)
 			case TypePluginENS:

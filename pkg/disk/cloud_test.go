@@ -4,6 +4,7 @@ package disk
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -18,6 +19,8 @@ import (
 	"github.com/kubernetes-sigs/alibaba-cloud-csi-driver/pkg/disk/waitstatus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2/ktesting"
 	"k8s.io/utils/clock"
@@ -777,6 +780,31 @@ func TestAttachDisk(t *testing.T) {
 				require.NoError(t, err)
 				assert.Equal(t, "fake-serial-number", r.disk.SerialNumber)
 			}
+		})
+	}
+}
+
+func TestMapAttachError(t *testing.T) {
+	serverErr := func(code string) error {
+		return alicloudErr.NewServerError(400, fmt.Sprintf(`{"Code":%q,"Message":"test","RequestId":"req-1"}`, code), code)
+	}
+
+	testcases := []struct {
+		name     string
+		err      error
+		wantCode codes.Code
+	}{
+		{name: "node not found", err: serverErr(InstanceNotFound), wantCode: codes.NotFound},
+		// The CO reacts to ResourceExhausted by refreshing the node volume limit
+		// and failing the pod, so a full node must not be Internal.
+		{name: "disk limit exceeded", err: serverErr(DiskLimitExceeded), wantCode: codes.ResourceExhausted},
+		{name: "unsupported disk category", err: serverErr(NotSupportDiskCategory), wantCode: codes.Internal},
+		{name: "unknown error", err: errors.New("boom"), wantCode: codes.Aborted},
+	}
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := mapAttachError(tc.err, "node-1", "d-1")
+			assert.Equal(t, tc.wantCode, status.Code(err))
 		})
 	}
 }

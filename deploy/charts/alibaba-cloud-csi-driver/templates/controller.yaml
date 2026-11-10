@@ -291,6 +291,9 @@ spec:
             - --kube-api-burst=2000
             - --worker-threads=1200
             - --timeout=30s
+{{- if .Values.csi.disk.controller.nodeInfoFromController }}
+            - --feature-gates=CSIControllerGetNodeInfo=true
+{{- end }}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

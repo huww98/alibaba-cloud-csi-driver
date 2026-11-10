@@ -59,19 +59,22 @@ import (
 )
 
 type nodeServer struct {
-	metadata     metadata.MetadataProvider
-	useLabeler   bool
-	recorder     record.EventRecorder
-	ecsV2        cloud.ECSv2Interface
-	mounter      utils.Mounter
-	kataBMIOType MachineType
-	k8smounter   k8smount.Interface
-	unixMounter  mounter.Interface
-	podCGroup    *utils.PodCGroup
-	clientSet    *kubernetes.Clientset
-	ad           DiskAttachDetach
-	locks        *utils.VolumeLocks
-	dmControl    *datacache.DmControl // nil if device-mapper is unavailable on this node
+	metadata   metadata.MetadataProvider
+	useLabeler bool
+	// controllerNodeInfo is set when topology and volume limits are reported by
+	// the controller through ControllerGetNodeInfo (KEP-6011).
+	controllerNodeInfo bool
+	recorder           record.EventRecorder
+	ecsV2              cloud.ECSv2Interface
+	mounter            utils.Mounter
+	kataBMIOType       MachineType
+	k8smounter         k8smount.Interface
+	unixMounter        mounter.Interface
+	podCGroup          *utils.PodCGroup
+	clientSet          *kubernetes.Clientset
+	ad                 DiskAttachDetach
+	locks              *utils.VolumeLocks
+	dmControl          *datacache.DmControl // nil if device-mapper is unavailable on this node
 	common.GenericNodeServer
 }
 
@@ -152,7 +155,7 @@ func parseVolumeCountEnv() (int, error) {
 }
 
 // NewNodeServer creates node server
-func NewNodeServer(csiCfg utils.Config, ecs cloud.ECSInterface, ecsV2 cloud.ECSv2Interface, m metadata.MetadataProvider, useLabeler bool) csi.NodeServer {
+func NewNodeServer(csiCfg utils.Config, ecs cloud.ECSInterface, ecsV2 cloud.ECSv2Interface, m metadata.MetadataProvider, useLabeler bool, nodeInfoFromController bool) csi.NodeServer {
 	DefaultDeviceManager.DisableSerial = IsVFNode()
 	DefaultDeviceManager.EnableDiskPartition = csiCfg.GetBool("disk-partition-enable", "DISK_PARTITION_ENABLE", true)
 
@@ -206,16 +209,17 @@ func NewNodeServer(csiCfg utils.Config, ecs cloud.ECSInterface, ecsV2 cloud.ECSv
 
 	waiter, batcher := newBatcher(true)
 	return &nodeServer{
-		metadata:     m,
-		useLabeler:   useLabeler,
-		recorder:     utils.NewEventRecorder(utils.EventComponentNode),
-		ecsV2:        ecsV2,
-		mounter:      utils.NewMounter(),
-		kataBMIOType: kataBMIOType,
-		unixMounter:  mounter.UnixMounter{},
-		k8smounter:   k8smount.NewWithoutSystemd(""),
-		podCGroup:    podCgroup,
-		clientSet:    GlobalConfigVar.ClientSet,
+		metadata:           m,
+		useLabeler:         useLabeler,
+		controllerNodeInfo: nodeInfoFromController,
+		recorder:           utils.NewEventRecorder(utils.EventComponentNode),
+		ecsV2:              ecsV2,
+		mounter:            utils.NewMounter(),
+		kataBMIOType:       kataBMIOType,
+		unixMounter:        mounter.UnixMounter{},
+		k8smounter:         k8smount.NewWithoutSystemd(""),
+		podCGroup:          podCgroup,
+		clientSet:          GlobalConfigVar.ClientSet,
 		ad: DiskAttachDetach{
 			ecs:     ecs,
 			waiter:  waiter,
@@ -267,6 +271,15 @@ func (ns *nodeServer) NodeGetCapabilities(ctx context.Context, req *csi.NodeGetC
 	nodeSvcCap := []*csi.NodeServiceCapability{nscap, nscap2}
 	if GlobalConfigVar.MetricEnable {
 		nodeSvcCap = []*csi.NodeServiceCapability{nscap, nscap2, nscap3}
+	}
+	if ns.controllerNodeInfo {
+		nodeSvcCap = append(nodeSvcCap, &csi.NodeServiceCapability{
+			Type: &csi.NodeServiceCapability_Rpc{
+				Rpc: &csi.NodeServiceCapability_RPC{
+					Type: csi.NodeServiceCapability_RPC_NODE_INFO_FROM_CONTROLLER,
+				},
+			},
+		})
 	}
 
 	return &csi.NodeGetCapabilitiesResponse{
@@ -880,6 +893,19 @@ func (ns *nodeServer) patchNodeInfo(ctx context.Context, m metadata.MetadataProv
 func (ns *nodeServer) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (*csi.NodeGetInfoResponse, error) {
 	logger := klog.FromContext(ctx)
 
+	if req.GetControllerGetNodeInfo() {
+		// The controller reports the topology and the volume limit, see
+		// ControllerGetNodeInfo. The node only needs its identity, which comes from
+		// the instance metadata service and needs no credentials, and must not
+		// patch the node either.
+		if !ns.controllerNodeInfo {
+			return nil, status.Error(codes.InvalidArgument,
+				"controller_get_node_info requested, but the controller-side flow is disabled on this node")
+		}
+		logger.V(2).Info("NodeGetInfo: topology and volume limit are reported by the controller")
+		return &csi.NodeGetInfoResponse{NodeId: ns.NodeID}, nil
+	}
+
 	maxVolumesNum, err := parseVolumeCountEnv()
 	if err != nil {
 		return nil, err
@@ -943,16 +969,7 @@ func (ns *nodeServer) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoReque
 		}
 	}
 
-	segments := map[string]string{
-		common.ECSInstanceIDTopologyKey: instanceID,
-		// TopologyZoneKey key is always defined for existing persistent volumes
-		TopologyZoneKey:         zoneID,
-		RegionalDiskTopologyKey: regionID,
-	}
-	if !GlobalConfigVar.PrivateTopologyKey {
-		segments[v1.LabelTopologyZone] = zoneID
-	}
-
+	topology := &topologyInfo{InstanceID: instanceID, ZoneID: zoneID, RegionID: regionID}
 	kind, err := m.MachineKind()
 	if err != nil && !errors.Is(err, metadata.ErrUnknownMetadataKey) {
 		return nil, status.Errorf(codes.Internal, "cannot determine current machine kind: %v", err)
@@ -962,11 +979,10 @@ func (ns *nodeServer) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoReque
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "failed to get LingJun HPN zone: %v", err)
 		}
-		segments[metadata.LingjunWorkerLabel] = "true"
-		if hpnZone != "" {
-			segments[metadata.LingjunHpnZoneLabel] = hpnZone
-		}
+		topology.Lingjun = true
+		topology.HpnZone = hpnZone
 	}
+	segments := topologySegments(topology)
 
 	// disable disk allocation when maxVolumesNum is 0
 	// events:

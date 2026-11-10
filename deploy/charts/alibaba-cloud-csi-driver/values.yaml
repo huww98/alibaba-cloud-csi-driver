@@ -40,6 +40,12 @@ csi:
     enabled: true
     controller:
       enabled: true
+      # Report the node's topology and volume attachment limit from the
+      # controller through ControllerGetNodeInfo instead of from the node
+      # (KEP-6011). Requires the CSIControllerGetNodeInfo feature gate on
+      # kube-apiserver, kubelet and external-attacher, and cloud API credentials
+      # only on the controller.
+      nodeInfoFromController: false
   nas:
     enabled: true
     controller:

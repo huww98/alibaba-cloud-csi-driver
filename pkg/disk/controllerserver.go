@@ -64,6 +64,8 @@ type controllerServer struct {
 	clientSet      kubernetes.Interface
 	snapshotWaiter waitstatus.StatusWaiter[ecs.Snapshot]
 	modify         ModifyServer
+	// nodeInfo answers ControllerGetNodeInfo, the controller-side flow of KEP-6011.
+	nodeInfo *nodeInfoResolver
 	common.GenericControllerServer
 }
 
@@ -111,13 +113,14 @@ func newSnapshotStatusWaiter() waitstatus.StatusWaiter[ecs.Snapshot] {
 }
 
 // NewControllerServer is to create controller server
-func NewControllerServer(csiCfg utils.Config, ecs cloud.ECSInterface, ecsV2 cloud.ECSv2Interface, m metadata.MetadataProvider) csi.ControllerServer {
+func NewControllerServer(csiCfg utils.Config, ecs cloud.ECSInterface, ecsV2 cloud.ECSv2Interface, eflo cloud.EFLOInterface, m metadata.MetadataProvider) csi.ControllerServer {
 	waiter, batcher := newBatcher(false)
 	c := &controllerServer{
 		recorder:  utils.NewEventRecorder(utils.EventComponentController),
 		meta:      m,
 		ecs:       ecs,
 		clientSet: GlobalConfigVar.ClientSet,
+		nodeInfo:  newNodeInfoResolver(ecsV2, eflo, metadata.MustGet(m, metadata.RegionID)),
 		ad: DiskAttachDetach{
 			ecs:     ecs,
 			waiter:  waiter,
@@ -161,8 +164,16 @@ func (cs *controllerServer) ControllerGetCapabilities(ctx context.Context, req *
 			csi.ControllerServiceCapability_RPC_LIST_SNAPSHOTS,
 			csi.ControllerServiceCapability_RPC_EXPAND_VOLUME,
 			csi.ControllerServiceCapability_RPC_MODIFY_VOLUME,
+			csi.ControllerServiceCapability_RPC_GET_NODE_INFO,
 		),
 	}, nil
+}
+
+// ControllerGetNodeInfo reports the topology, the volume attachment limit and the
+// attached volumes of a node, so that the node does not need cloud API
+// credentials to register itself (KEP-6011).
+func (cs *controllerServer) ControllerGetNodeInfo(ctx context.Context, req *csi.ControllerGetNodeInfoRequest) (*csi.ControllerGetNodeInfoResponse, error) {
+	return cs.nodeInfo.GetNodeInfo(ctx, req.GetNodeId())
 }
 
 // provisioner: create/delete disk

@@ -93,7 +93,7 @@ var (
 )
 
 // NewServers create the identity/node/controller server and disk driver
-func NewServers(m metadata.MetadataProvider, ecsV2 cloud.ECSv2Interface, endpoint string, serviceType utils.ServiceType, csiCfg utils.Config, useLabeler bool) *common.Servers {
+func NewServers(m metadata.MetadataProvider, ecsV2 cloud.ECSv2Interface, eflo cloud.EFLOInterface, endpoint string, serviceType utils.ServiceType, csiCfg utils.Config, useLabeler bool, nodeInfoFromController bool) *common.Servers {
 
 	GlobalConfigSet(m, csiCfg)
 
@@ -115,10 +115,10 @@ func NewServers(m metadata.MetadataProvider, ecsV2 cloud.ECSv2Interface, endpoin
 	var servers common.Servers
 	servers.IdentityServer = NewIdentityServer()
 	if serviceType&utils.Controller != 0 {
-		servers.ControllerServer = NewControllerServer(csiCfg, client, ecsV2, m)
+		servers.ControllerServer = NewControllerServer(csiCfg, client, ecsV2, eflo, m)
 	}
 	if serviceType&utils.Node != 0 {
-		servers.NodeServer = NewNodeServer(csiCfg, client, ecsV2, m, useLabeler)
+		servers.NodeServer = NewNodeServer(csiCfg, client, ecsV2, m, useLabeler, nodeInfoFromController)
 	}
 	if features.FunctionalMutableFeatureGate.Enabled(features.EnableVolumeGroupSnapshots) {
 		servers.GroupControllerServer = NewGroupControllerServer()

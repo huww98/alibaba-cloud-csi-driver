@@ -58,13 +58,34 @@ func (m *OpenAPIMetadata) get(key MetadataKey) *string {
 
 func (m *OpenAPIMetadata) GetAny(_ *mcontext, key MetadataKey) (any, error) {
 	if key == isHighDensityMode {
-		ai := m.instance.AdditionalInfo
-		return ai != nil && ptr.Deref(ai.EnableHighDensityMode, false), nil
+		return m.HighDensityMode(), nil
 	}
 	if v := m.get(key); v != nil {
 		return *v, nil
 	}
 	return nil, ErrUnknownMetadataKey
+}
+
+// Accessors for consumers outside this package, e.g. the controller-side node
+// info lookup that handles instances other than the local one.
+
+func (m *OpenAPIMetadata) ZoneID() (string, error) {
+	if v := m.get(ZoneID); v != nil {
+		return *v, nil
+	}
+	return "", ErrUnknownMetadataKey
+}
+
+func (m *OpenAPIMetadata) InstanceType() (string, error) {
+	if v := m.get(InstanceType); v != nil {
+		return *v, nil
+	}
+	return "", ErrUnknownMetadataKey
+}
+
+func (m *OpenAPIMetadata) HighDensityMode() bool {
+	ai := m.instance.AdditionalInfo
+	return ai != nil && ptr.Deref(ai.EnableHighDensityMode, false)
 }
 
 type OpenAPIFetcher struct {
